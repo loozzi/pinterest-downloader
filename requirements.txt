@@ -1,0 +1,4 @@
+selenium==4.15.2
+Pillow==10.0.1
+webdriver-manager==4.0.1
+# concurrent.futures đã có sẵn trong Python 3.2+
