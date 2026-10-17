@@ -3,3 +3,8 @@ __pycache__/
 # Chrome profile chứa phiên đăng nhập Pinterest - không commit
 chrome_profile/
 pinterest_fashion_images/
+tarot_images/
+.env
+generated_tarot/
+
+output_cards
