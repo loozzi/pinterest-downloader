@@ -1,0 +1,13 @@
+[project]
+name = "Pinterest-downloader"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Nguyen Quang Thao", email = "nquangthao19072004@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "selenium>=4.15",
+    "pillow>=11.0",
+]

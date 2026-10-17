@@ -17,20 +17,21 @@ Tool tự động tải hình ảnh từ Pinterest với các từ khóa về th
 
 ### 1. Cài đặt các thư viện Python
 
-```cmd
-pip install -r requirements.txt
+```bash
+uv sync
+# hoặc: pip install -r requirements.txt
 ```
 
-### 2. Cài đặt ChromeDriver
+### 2. Cài đặt Google Chrome
 
-- Tải ChromeDriver từ: https://chromedriver.chromium.org/
-- Đặt file `chromedriver.exe` vào thư mục hiện tại hoặc PATH
+Selenium 4.6+ tự động tải ChromeDriver phù hợp, không cần cài thủ công.
 
-Hoặc sử dụng webdriver-manager (tự động):
+### 3. Đăng nhập Pinterest (bắt buộc, chỉ làm một lần)
 
-```cmd
-pip install webdriver-manager
-```
+Pinterest không trả kết quả tìm kiếm khi chưa đăng nhập. Chạy tool, chọn
+**10. Đăng nhập Pinterest**, đăng nhập trong cửa sổ Chrome vừa mở rồi nhấn Enter.
+Phiên đăng nhập được lưu trong thư mục `chrome_profile/` và dùng lại cho các lần sau
+(thư mục này đã nằm trong `.gitignore`, không commit lên git).
 
 ## Cách sử dụng
 
@@ -49,6 +50,9 @@ python pinterest.py
 - **5**: Xóa từ khóa
 - **6**: Xem danh sách từ khóa
 - **7**: Thay đổi số luồng (1-5)
+- **8**: Xem thống kê tải về
+- **9**: Xóa lịch sử tải (giữ file)
+- **10**: Đăng nhập Pinterest 🔐
 - **0**: Thoát
 
 ### 3. Từ khóa mặc định:
@@ -108,9 +112,9 @@ cut video/
 
 ### ⚠️ Yêu cầu hệ thống:
 
-- Python 3.7+
-- Chrome browser
-- ChromeDriver
+- Python 3.13+
+- Google Chrome
+- Tài khoản Pinterest
 - Kết nối internet ổn định
 
 ### 🚨 Chú ý khi sử dụng:
@@ -122,12 +126,14 @@ cut video/
 
 ### 🛠️ Xử lý lỗi thường gặp:
 
-1. **Lỗi ChromeDriver not found**:
+1. **Lỗi khởi tạo Chrome driver**:
 
-   - Tải và cài đặt ChromeDriver
-   - Hoặc cài `webdriver-manager`
+   - Kiểm tra đã cài Google Chrome
+   - Đóng các cửa sổ Chrome khác đang dùng thư mục `chrome_profile/`
 
 2. **Lỗi không tìm thấy hình ảnh**:
+
+   - Đăng nhập Pinterest (menu 10) nếu chưa đăng nhập hoặc phiên đã hết hạn
 
    - Kiểm tra kết nối internet
    - Thử với từ khóa khác

@@ -2,6 +2,7 @@ import hashlib
 import io
 import os
 import time
+import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -12,16 +13,25 @@ from selenium.webdriver.common.by import By
 
 
 class PinterestImageDownloader:
-    def __init__(self, download_folder="pinterest_images", max_threads=5):
+    def __init__(
+        self, download_folder="pinterest_images", max_threads=5, profile_dir=None
+    ):
         """
         Khởi tạo Pinterest Image Downloader
 
         Args:
             download_folder (str): Thư mục lưu hình ảnh tải về
             max_threads (int): Số luồng tối đa cho tải đa luồng (tối đa 5)
+            profile_dir (str): Thư mục Chrome profile lưu phiên đăng nhập Pinterest
         """
         self.download_folder = download_folder
         self.max_threads = min(max_threads, 5)  # Giới hạn tối đa 5 luồng
+        # Pinterest không trả kết quả tìm kiếm khi chưa đăng nhập,
+        # nên dùng một Chrome profile riêng để giữ phiên đăng nhập
+        self.profile_dir = os.path.abspath(
+            profile_dir
+            or os.path.join(os.path.dirname(os.path.abspath(__file__)), "chrome_profile")
+        )
         self.create_download_folder()
         self.driver = None
         self.download_stats = {
@@ -93,25 +103,88 @@ class PinterestImageDownloader:
         try:
             chrome_options = Options()
             if headless:
-                chrome_options.add_argument("--headless")
+                chrome_options.add_argument("--headless=new")
+            chrome_options.add_argument(f"--user-data-dir={self.profile_dir}")
             chrome_options.add_argument("--no-sandbox")
             chrome_options.add_argument("--disable-dev-shm-usage")
             chrome_options.add_argument("--disable-gpu")
             chrome_options.add_argument("--window-size=1920,1080")
-            user_agent = (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/91.0.4472.124 Safari/537.36"
-            )
-            chrome_options.add_argument(f"--user-agent={user_agent}")
 
             self.driver = webdriver.Chrome(options=chrome_options)
+
+            # Bỏ chữ "Headless" khỏi user agent thật của Chrome để tránh bị chặn
+            user_agent = self.driver.execute_script("return navigator.userAgent")
+            if "HeadlessChrome" in user_agent:
+                self.driver.execute_cdp_cmd(
+                    "Network.setUserAgentOverride",
+                    {"userAgent": user_agent.replace("HeadlessChrome", "Chrome")},
+                )
+
             print("✅ Đã khởi tạo Chrome driver thành công")
             return True
 
         except Exception as e:
             print(f"❌ Lỗi khi khởi tạo Chrome driver: {e}")
-            print("💡 Hãy đảm bảo bạn đã cài đặt ChromeDriver")
+            print("💡 Hãy đảm bảo đã cài Google Chrome và không có cửa sổ Chrome")
+            print(f"   nào khác đang dùng profile: {self.profile_dir}")
+            return False
+
+    def login_pinterest(self):
+        """
+        Mở Chrome (có giao diện) để người dùng đăng nhập Pinterest một lần.
+        Phiên đăng nhập được lưu trong profile_dir và dùng lại ở các lần sau.
+        """
+        if not self.setup_driver(headless=False):
+            return False
+
+        try:
+            self.driver.get("https://www.pinterest.com/login/")
+            print("🔐 Hãy đăng nhập Pinterest trong cửa sổ Chrome vừa mở.")
+            input("👉 Đăng nhập xong thì nhấn Enter tại đây...")
+            while not self.is_logged_in():
+                answer = input(
+                    "⚠️ Chưa thấy đăng nhập. Nhấn Enter để kiểm tra lại, 'q' để hủy: "
+                )
+                if answer.strip().lower() == "q":
+                    return False
+            print("✅ Đã lưu phiên đăng nhập Pinterest")
+            return True
+        finally:
+            self.driver.quit()
+            self.driver = None
+
+    def start_session(self):
+        """
+        Khởi tạo Chrome (headless) và đảm bảo đã đăng nhập Pinterest.
+        Nếu chưa đăng nhập thì hỏi người dùng có muốn đăng nhập ngay không.
+
+        Returns:
+            bool: True nếu driver sẵn sàng và đã đăng nhập
+        """
+        if not self.setup_driver():
+            return False
+
+        self.driver.get("https://www.pinterest.com/")
+        time.sleep(2)
+        if self.is_logged_in():
+            return True
+
+        self.driver.quit()
+        self.driver = None
+        print("❌ Chưa đăng nhập Pinterest - Pinterest sẽ không trả kết quả tìm kiếm")
+        answer = input("🔐 Mở Chrome để đăng nhập ngay? (y/n, mặc định y): ")
+        if answer.strip().lower() == "n" or not self.login_pinterest():
+            return False
+        return self.setup_driver()
+
+    def is_logged_in(self):
+        """Kiểm tra trình duyệt hiện tại đã đăng nhập Pinterest chưa"""
+        try:
+            return any(
+                c["name"] == "_auth" and c["value"] == "1"
+                for c in self.driver.get_cookies()
+            )
+        except Exception:
             return False
 
     def search_pinterest(self, keyword, max_images=20):
@@ -131,7 +204,10 @@ class PinterestImageDownloader:
 
         try:
             # Truy cập Pinterest
-            search_url = f"https://www.pinterest.com/search/pins/?q={keyword.replace(' ', '%20')}"
+            search_url = (
+                "https://www.pinterest.com/search/pins/?q="
+                + urllib.parse.quote(keyword)
+            )
             print(f"🔍 Đang tìm kiếm: {keyword}")
             print(f"📱 URL: {search_url}")
 
@@ -153,15 +229,15 @@ class PinterestImageDownloader:
                 )
                 time.sleep(2)
 
-                # Tìm tất cả hình ảnh
+                # Tìm hình ảnh của pin (i.pinimg.com); s.pinimg.com là ảnh giao diện
                 images = self.driver.find_elements(
-                    By.CSS_SELECTOR, 'img[src*="pinimg.com"]'
+                    By.CSS_SELECTOR, 'img[src*="i.pinimg.com"]'
                 )
 
                 for img in images:
                     try:
                         src = img.get_attribute("src")
-                        if src and "pinimg.com" in src and src not in image_urls:
+                        if src and "i.pinimg.com" in src and src not in image_urls:
                             # Chuyển đổi sang URL chất lượng cao
                             high_quality_url = self.get_high_quality_url(src)
 
@@ -542,7 +618,7 @@ class PinterestImageDownloader:
         Returns:
             dict: Thống kê tải về
         """
-        if not self.setup_driver():
+        if not self.start_session():
             return {}
 
         try:
@@ -707,9 +783,10 @@ def main():
         print("7. Thay đổi số luồng")
         print("8. Xem thống kê tải về")
         print("9. Xóa lịch sử tải (giữ file)")
+        print("10. Đăng nhập Pinterest (bắt buộc trước lần tải đầu tiên)")
         print("0. Thoát")
 
-        choice = input("\n🔢 Chọn chức năng (0-9): ").strip()
+        choice = input("\n🔢 Chọn chức năng (0-10): ").strip()
 
         if choice == "1":
             # Tải với từ khóa mặc định - đa luồng
@@ -764,7 +841,7 @@ def main():
                     )
                     use_multithreading = use_multi != "n"
 
-                    if downloader.setup_driver():
+                    if downloader.start_session():
                         try:
                             count = downloader.download_images_by_keyword(
                                 custom_keyword, max_images, use_multithreading
@@ -831,14 +908,17 @@ def main():
             else:
                 print("❌ Đã hủy xóa lịch sử")
 
+        elif choice == "10":
+            # Đăng nhập Pinterest
+            downloader.login_pinterest()
+
         elif choice == "0":
             print("👋 Tạm biệt!")
             break
 
         else:
-            print("❌ Lựa chọn không hợp lệ. Vui lòng chọn từ 0-9")
+            print("❌ Lựa chọn không hợp lệ. Vui lòng chọn từ 0-10")
 
 
 if __name__ == "__main__":
-    main()
     main()
